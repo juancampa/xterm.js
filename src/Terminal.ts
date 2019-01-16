@@ -466,17 +466,7 @@ export class Terminal extends EventEmitter implements ITerminal, IDisposable, II
         }
         break;
       case 'rendererType':
-        if (this.renderer) {
-          this.unregister(this.renderer);
-          this.renderer.dispose();
-          this.renderer = null;
-        }
-        this._setupRenderer();
-        this.renderer.onCharSizeChanged();
-        if (this._theme) {
-          this.renderer.setTheme(this._theme);
-        }
-        this.mouseHelper.setRenderer(this.renderer);
+        this.recreateRenderer();
         break;
       case 'scrollback':
         this.buffers.resize(this.cols, this.rows);
@@ -502,6 +492,21 @@ export class Terminal extends EventEmitter implements ITerminal, IDisposable, II
     if (this.renderer) {
       this.renderer.onOptionsChanged();
     }
+  }
+
+  public recreateRenderer(): void {
+    if (this.renderer) {
+      this.unregister(this.renderer);
+      this.renderer.dispose();
+      this.renderer = null;
+    }
+    this._setupRenderer();
+    this.renderer.onCharSizeChanged();
+
+    if (this._theme) {
+      this.renderer.setTheme(this._theme);
+    }
+    this.mouseHelper.setRenderer(this.renderer);
   }
 
   /**
@@ -698,12 +703,13 @@ export class Terminal extends EventEmitter implements ITerminal, IDisposable, II
     // Performance: Add viewport and helper elements from the fragment
     this.element.appendChild(fragment);
 
-    this._setupRenderer();
     this._theme = this.options.theme;
     this.options.theme = null;
     this.viewport = new Viewport(this, this._viewportElement, this._viewportScrollArea, this.charMeasure);
-    this.viewport.onThemeChanged(this.renderer.colorManager.colors);
     this.register(this.viewport);
+
+    this._setupRenderer();
+    this.viewport.onThemeChanged(this.renderer.colorManager.colors);
 
     this.register(this.addDisposableListener('cursormove', () => this.renderer.onCursorMove()));
     this.register(this.addDisposableListener('resize', () => this.renderer.onResize(this.cols, this.rows)));
@@ -714,7 +720,6 @@ export class Terminal extends EventEmitter implements ITerminal, IDisposable, II
     // matchMedia query.
     this.register(addDisposableDomListener(window, 'resize', () => this.renderer.onWindowResize(window.devicePixelRatio)));
     this.register(this.charMeasure.addDisposableListener('charsizechanged', () => this.renderer.onCharSizeChanged()));
-    this.register(this.renderer.addDisposableListener('resize', (dimensions) => this.viewport.syncScrollArea()));
 
     this.selectionManager = new SelectionManager(this, this.charMeasure);
     this.register(addDisposableDomListener(this.element, 'mousedown', (e: MouseEvent) => this.selectionManager.onMouseDown(e)));
@@ -758,11 +763,12 @@ export class Terminal extends EventEmitter implements ITerminal, IDisposable, II
 
   private _setupRenderer(): void {
     switch (this.options.rendererType) {
-      case 'canvas': this.renderer = new Renderer(this, this.options.theme); break;
-      case 'dom': this.renderer = new DomRenderer(this, this.options.theme); break;
-      case 'webgl': this.renderer = new WebglRenderer(this, this.options.theme); break;
+      case 'canvas': this.renderer = new Renderer(this, this._theme); break;
+      case 'dom': this.renderer = new DomRenderer(this, this._theme); break;
+      case 'webgl': this.renderer = new WebglRenderer(this, this._theme); break;
       default: throw new Error(`Unrecognized rendererType "${this.options.rendererType}"`);
     }
+    this.register(this.renderer.addDisposableListener('resize', (dimensions) => this.viewport.syncScrollArea()));
     this.register(this.renderer);
   }
 
